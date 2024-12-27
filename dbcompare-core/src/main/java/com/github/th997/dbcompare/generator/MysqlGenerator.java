@@ -3,6 +3,7 @@ package com.github.th997.dbcompare.generator;
 import com.github.th997.dbcompare.SqlGenerator;
 import com.github.th997.dbcompare.bean.TableColumn;
 import com.github.th997.dbcompare.bean.TableIndex;
+import com.github.th997.dbcompare.bean.TableInfo;
 
 import java.util.*;
 import java.util.function.Function;
@@ -32,8 +33,8 @@ public class MysqlGenerator implements SqlGenerator {
     }
 
     @Override
-    public String generateTableSql(String scheme, String table, List<TableColumn> columnList) {
-        StringBuffer sql = new StringBuffer(String.format("create table `%s`.`%s` (\n", scheme, table));
+    public String generateTableSql(TableInfo table, List<TableColumn> columnList) {
+        StringBuffer sql = new StringBuffer(String.format("create table `%s`.`%s` (\n", table.getSchemaName(), table.getTableName()));
         List<String> priKeys = new ArrayList<>();
         for (TableColumn c : columnList) {
             sql.append(generateColumnSql(c) + ",\n");
@@ -47,46 +48,57 @@ public class MysqlGenerator implements SqlGenerator {
             sql.delete(sql.length() - 2, sql.length());
         }
         sql.append("\n)");
+        if (table.getTableComment() != null) {
+            sql.append(String.format(" comment='%s'", table.getTableComment().replaceAll("'", "''").replaceAll("\\n", " ")));
+        }
         return sql.toString();
     }
 
     @Override
-    public String generateTableSql(String scheme, String table, List<TableColumn> src, List<TableColumn> dst) {
+    public String generateTableSql(TableInfo table, List<TableColumn> src, List<TableColumn> dst) {
         if (dst == null || dst.isEmpty()) {
-            return generateTableSql(scheme, table, src);
+            return generateTableSql(table, src);
         }
-        String initSql = String.format("alter table `%s`.`%s`\n", scheme, table);
+        String initSql = String.format("alter table `%s`.`%s`\n", table.getSchemaName(), table.getTableName());
         StringBuffer sql = new StringBuffer(initSql);
         Map<String, TableColumn> srcMap = src.stream().collect(Collectors.toMap(TableColumn::getColumnName, Function.identity()));
         Map<String, TableColumn> dstMap = dst.stream().collect(Collectors.toMap(TableColumn::getColumnName, Function.identity()));
         Set<String> allColumns = new HashSet<>();
         allColumns.addAll(srcMap.keySet());
         allColumns.addAll(dstMap.keySet());
+        boolean isModifyLast = false;
         for (String columnName : allColumns) {
             TableColumn srcColumn = srcMap.get(columnName);
             TableColumn dstColumn = dstMap.get(columnName);
             if (dstColumn == null) {
                 String srcSql = this.generateColumnSql(srcColumn);
                 sql.append("add column " + srcSql + ",\n");
+                isModifyLast = false;
             } else if (srcColumn == null) {
                 sql.append(String.format("drop column %s,\n", columnName));
+                isModifyLast = false;
             } else {
                 String srcSql = this.generateColumnSql(srcColumn);
                 String dstSql = this.generateColumnSql(dstColumn);
                 if (!srcSql.equals(dstSql)) {
                     sql.append("modify column " + srcSql + ", -- " + dstSql + "\n");
+                    isModifyLast = true;
                 }
             }
         }
         if (sql.length() == initSql.length()) {
             return null;
         }
-        sql.deleteCharAt(sql.lastIndexOf(","));
+        if (isModifyLast) {
+            sql.deleteCharAt(sql.lastIndexOf(",", sql.lastIndexOf(" -- ")));
+        } else {
+            sql.deleteCharAt(sql.lastIndexOf(","));
+        }
         return sql.toString();
     }
 
     @Override
-    public String generateIndexSql(String scheme, String table, List<TableIndex> src, List<TableIndex> dst) {
+    public String generateIndexSql(TableInfo table, List<TableIndex> src, List<TableIndex> dst) {
         Map<String, List<TableIndex>> srcMap = this.groupByColumn(src);
         Map<String, List<TableIndex>> dstMap = this.groupByColumn(dst);
         Set<String> allKeys = new HashSet<>();
@@ -107,7 +119,7 @@ public class MysqlGenerator implements SqlGenerator {
         if (sql.length() == 0) {
             return null;
         }
-        return String.format("alter table `%s`.`%s` %s", scheme, table, sql.deleteCharAt(sql.lastIndexOf(",")).toString().trim());
+        return String.format("alter table `%s`.`%s` %s", table.getSchemaName(), table.getTableName(), sql.deleteCharAt(sql.lastIndexOf(",")).toString().trim());
     }
 
     public Map<String, List<TableIndex>> groupByColumn(List<TableIndex> indexList) {

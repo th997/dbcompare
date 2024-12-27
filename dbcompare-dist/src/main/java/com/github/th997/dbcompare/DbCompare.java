@@ -2,6 +2,7 @@ package com.github.th997.dbcompare;
 
 import com.github.th997.dbcompare.bean.TableColumn;
 import com.github.th997.dbcompare.bean.TableIndex;
+import com.github.th997.dbcompare.bean.TableInfo;
 import com.github.th997.dbcompare.exception.JdbcUrlParseException;
 import com.github.th997.dbcompare.exception.NoSuchImplementException;
 import org.apache.commons.cli.*;
@@ -111,17 +112,20 @@ public class DbCompare {
         StringBuffer ret = new StringBuffer();
         try (Connection srcConn = DbCompareFactory.getConn(source.getJdbcUrl(), source.getUsername(), source.getPassword());//
              Connection targetConn = DbCompareFactory.getConn(target.getJdbcUrl(), target.getUsername(), target.getPassword())) {
+            Map<String, TableInfo> tableMap = sourceQuery.queryTableInfo(srcConn, sourceSchema);
             Map<String, List<TableColumn>> sourceMap = sourceQuery.querySchemaColumn(srcConn, sourceSchema);
             Map<String, List<TableColumn>> targetMap = targetQuery.querySchemaColumn(targetConn, targetSchema);
             Map<String, List<TableIndex>> sourceIndexMap = sourceQuery.querySchemaIndex(srcConn, sourceSchema);
             Map<String, List<TableIndex>> targetIndexMap = targetQuery.querySchemaIndex(targetConn, targetSchema);
             sourceMap.forEach((table, columns) -> {
                 if (sourceTableSet.isEmpty() || sourceTableSet.contains(table)) {
-                    String sql = sqlGenerator.generateTableSql(targetSchema, table, columns, targetMap.get(table));
+                    TableInfo tableInfo = tableMap.get(table);
+                    tableInfo.setSchemaName(targetSchema);
+                    String sql = sqlGenerator.generateTableSql(tableInfo, columns, targetMap.get(table));
                     if (sql != null) {
                         ret.append(sql + ";\n\n");
                     }
-                    String indexSql = sqlGenerator.generateIndexSql(targetSchema, table, sourceIndexMap.get(table), targetIndexMap.get(table));
+                    String indexSql = sqlGenerator.generateIndexSql(tableInfo, sourceIndexMap.get(table), targetIndexMap.get(table));
                     if (indexSql != null) {
                         ret.append(indexSql + ";\n\n");
                     }

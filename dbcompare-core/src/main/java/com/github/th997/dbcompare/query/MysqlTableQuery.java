@@ -4,9 +4,16 @@ import com.github.th997.dbcompare.TableQuery;
 
 public class MysqlTableQuery implements TableQuery {
 
+    private static final String SQL_TABLE_QUERY = "select table_schema,table_name,table_comment  from information_schema.tables t where table_schema=?";
+
     private static final String SQL_COLUMN_QUERY = "select table_name, column_name,column_type,data_type,column_comment,character_maximum_length str_len,numeric_precision,numeric_scale,column_default,is_nullable = 'YES' null_able,column_key = 'PRI' pri,extra ='auto_increment' as \"auto_increment\" from information_schema.columns where table_schema =? %s order by ordinal_position";
 
     private static final String SQL_INDEX_QUERY = "select table_name, index_name,column_name,non_unique,index_name='PRIMARY' pri from information_schema.statistics where table_schema = ? %s order by seq_in_index";
+
+    @Override
+    public String getTableInfoSql() {
+        return SQL_TABLE_QUERY;
+    }
 
     @Override
     public String getTableColumnSql() {

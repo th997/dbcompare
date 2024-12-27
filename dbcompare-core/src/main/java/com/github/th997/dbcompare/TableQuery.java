@@ -2,17 +2,21 @@ package com.github.th997.dbcompare;
 
 import com.github.th997.dbcompare.bean.TableColumn;
 import com.github.th997.dbcompare.bean.TableIndex;
+import com.github.th997.dbcompare.bean.TableInfo;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 public interface TableQuery {
+
+    String getTableInfoSql();
 
     String getTableColumnSql();
 
@@ -21,6 +25,23 @@ public interface TableQuery {
     String getTableIndexSql();
 
     String getSchemaIndexSql();
+
+    default Map<String, TableInfo> queryTableInfo(Connection connection, String schemaName) throws SQLException {
+        Map<String, TableInfo> map = new HashMap<>();
+        try (PreparedStatement statement = connection.prepareStatement(getTableInfoSql())) {
+            statement.setString(1, schemaName);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    TableInfo tableInfo = new TableInfo();
+                    tableInfo.setSchemaName(rs.getString("table_schema"));
+                    tableInfo.setTableName(rs.getString("table_name"));
+                    tableInfo.setTableComment(rs.getString("table_comment"));
+                    map.put(tableInfo.getTableName(), tableInfo);
+                }
+            }
+        }
+        return map;
+    }
 
     default List<TableColumn> queryTableColumn(Connection connection, String schemaName, String tableName) throws SQLException {
         List<TableColumn> tableColumnList = new ArrayList<>();

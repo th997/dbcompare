@@ -1,6 +1,7 @@
 package com.github.th997.dbcompare.generator;
 
 import com.github.th997.dbcompare.bean.TableColumn;
+import com.github.th997.dbcompare.bean.TableInfo;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -38,8 +39,8 @@ public class StarRocksGenerator extends MysqlGenerator {
     }
 
     @Override
-    public String generateTableSql(String scheme, String table, List<TableColumn> columnList) {
-        StringBuffer sql = new StringBuffer(String.format("create table `%s`.`%s` (\n", scheme, table));
+    public String generateTableSql(TableInfo table, List<TableColumn> columnList) {
+        StringBuffer sql = new StringBuffer(String.format("create table `%s`.`%s` (\n", table.getSchemaName(), table.getTableName()));
         List<String> priKeys = new ArrayList<>();
         columnList.sort(Comparator.comparing(TableColumn::isPri).reversed());
         for (TableColumn c : columnList) {
