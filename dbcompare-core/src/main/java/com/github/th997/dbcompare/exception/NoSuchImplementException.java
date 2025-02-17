@@ -4,4 +4,5 @@ public class NoSuchImplementException extends RuntimeException {
     public NoSuchImplementException(String msg) {
         super(msg);
     }
+
 }

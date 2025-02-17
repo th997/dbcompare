@@ -9,8 +9,11 @@ import org.apache.commons.cli.*;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.Statement;
 import java.util.*;
 
@@ -20,7 +23,7 @@ public class DbCompare {
         // compare -o compare.sql -ss test ts test  -u user:password@jdbc:mysql://localhost:3306,user:password@jdbc:mysql://localhost:3307
         Options options = new Options();
         options.addOption("h", "help", false, "print usage");
-        options.addOption("t", "type", true, "operate type: schema|data|exec, schema compare|data compare|execute sql");
+        options.addOption("t", "type", true, "operate type: schema|data|exec|query, schema compare|data compare|execute|query sql");
         options.addOption("i", "input", true, "input file path or sql");
         options.addOption("o", "output", true, "output file path: default console");
         options.addOption("u", "urls", true, "jdbc urls like: user:password@jdbc:mysql://localhost:3306,...");
@@ -68,28 +71,14 @@ public class DbCompare {
         String type = cmd.getOptionValue("t", "schema");
         List<JdbcConfig> configs = parseUrls(cmd.getOptionValue("u"), "exec".equals(type) ? 1 : 2);
         if ("exec".equals(type)) {
-            String input = cmd.getOptionValue("i");
-            if (input == null) {
-                throw new IllegalArgumentException("input is required");
-            }
-            String sqls = input;
-            File inputFile = new File(input);
-            if (inputFile.exists()) {
-                sqls = new String(Files.readAllBytes(inputFile.toPath()));
-            }
-            for (JdbcConfig config : configs) {
-                try (Connection conn = DbCompareFactory.getConn(config.getJdbcUrl(), config.getUsername(), config.getPassword())) {
-                    for (String sql : sqls.split(";")) {
-                        try (Statement st = conn.createStatement()) {
-                            st.execute(sql);
-                        }
-                    }
-                }
-            }
+            execSql(cmd, configs, false);
             return;
         }
-
-        String output = cmd.getOptionValue("o");
+        if ("query".equals(type)) {
+            execSql(cmd, configs, true);
+            return;
+        }
+        StringBuffer ret = new StringBuffer();
         String sourceSchema = cmd.getOptionValue("ss");
         String sourceTables = cmd.getOptionValue("st");
         String targetSchema = cmd.getOptionValue("ts", sourceSchema);
@@ -99,7 +88,6 @@ public class DbCompare {
                 sourceTableSet.add(table.trim());
             }
         }
-
         JdbcConfig source = configs.get(0);
         JdbcConfig target = configs.get(1);
         if (!source.getJdbcType().equals(target.getJdbcType())) {
@@ -109,7 +97,6 @@ public class DbCompare {
         TableQuery targetQuery = DbCompareFactory.getTableQuery(target.getJdbcType());
         SqlGenerator sqlGenerator = DbCompareFactory.getSqlGenerator(target.getJdbcType());
 
-        StringBuffer ret = new StringBuffer();
         try (Connection srcConn = DbCompareFactory.getConn(source.getJdbcUrl(), source.getUsername(), source.getPassword());//
              Connection targetConn = DbCompareFactory.getConn(target.getJdbcUrl(), target.getUsername(), target.getPassword())) {
             Map<String, TableInfo> tableMap = sourceQuery.queryTableInfo(srcConn, sourceSchema);
@@ -132,6 +119,58 @@ public class DbCompare {
                 }
             });
         }
+        printOutput(ret.toString(), cmd.getOptionValue("o"));
+
+    }
+
+    private static void execSql(CommandLine cmd, List<JdbcConfig> configs, boolean query) throws Exception {
+        String input = cmd.getOptionValue("i");
+        if (input == null) {
+            throw new IllegalArgumentException("input is required");
+        }
+        String sqls = input;
+        File inputFile = new File(input);
+        if (inputFile.exists()) {
+            sqls = new String(Files.readAllBytes(inputFile.toPath()));
+        }
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (JdbcConfig config : configs) {
+            try (Connection conn = DbCompareFactory.getConn(config.getJdbcUrl(), config.getUsername(), config.getPassword())) {
+                for (String sql : sqls.split(";")) {
+                    sql = sql.trim();
+                    if (sql.isEmpty()) {
+                        continue;
+                    }
+                    System.out.println("jdbcUrl=" + config.getJdbcUrl() + ",sql=" + sql);
+                    try (Statement st = conn.createStatement()) {
+                        if (query) {
+                            ResultSet resultSet = st.executeQuery(sql);
+                            while (resultSet.next()) {
+                                Map<String, Object> data = new HashMap<>();
+                                ResultSetMetaData metaData = resultSet.getMetaData();
+                                int columnCount = metaData.getColumnCount();
+                                for (int i = 1; i <= columnCount; i++) {
+                                    String columnName = metaData.getColumnName(i);
+                                    Object columnValue = resultSet.getObject(i);
+                                    data.put(columnName, columnValue);
+                                }
+                                list.add(data);
+                            }
+                        } else {
+                            st.execute(sql);
+                        }
+                    }
+                }
+            }
+        }
+        StringBuilder ret = new StringBuilder();
+        for (Map<String, Object> data : list) {
+            ret.append(data.toString() + "\n");
+        }
+        printOutput(ret.toString(), cmd.getOptionValue("o"));
+    }
+
+    private static void printOutput(String ret, String output) throws IOException {
         if (output != null) {
             File outputFile = new File(output);
             try (FileOutputStream fos = new FileOutputStream(outputFile)) {

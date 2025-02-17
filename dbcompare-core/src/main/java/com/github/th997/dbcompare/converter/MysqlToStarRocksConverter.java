@@ -12,4 +12,7 @@ public class MysqlToStarRocksConverter implements TypeConverter {
     public TableColumn convert(TableColumn c) {
         return null;
     }
+
+
+
 }
